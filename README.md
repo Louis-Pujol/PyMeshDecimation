@@ -1,9 +1,2 @@
 # pyDecimation
-Fast mesh decimation in python with correspondence mapping
-
-
-Goal : pure python version of the VK decimation algo
-
-TODO :
-1) Implement QuadricInitialization
-2° Implement next steps...
+The goal of this package is to provide a pure python implementation of the quadric decimation algorithm of VTK that keep track of the collapse operations.
