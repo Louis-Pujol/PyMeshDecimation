@@ -1,4 +1,4 @@
-'''This file defines functionnal tests for the initialization of the quadricDecimation algorithm.
+"""This file defines functionnal tests for the initialization of the quadricDecimation algorithm.
 
 The initialization if the computatios that are done before starting collapsing edges.
 The variables that are computed are:
@@ -10,7 +10,7 @@ The test is done by comparing these variables obtained with the C++ VTK implemen
 the vtk module must be compiled from the code at https://github.com/Louis-Pujol/VTK/ to have access to the
 GetInitialTargetPoints, GetInitialEdges and GetInitialEdgeCosts methods of vtk. Using the standard VTK module,
 these variables are not accessible.
-'''
+"""
 
 import pyvista
 import numpy as np
@@ -18,8 +18,8 @@ from pyvista.core.filters import _get_output, _update_alg
 import vtk
 from QuadricDecimation_numba import *
 
-def foo(file):
 
+def foo(file):
     mesh = pyvista.read(file)
 
     # With VTK
@@ -40,7 +40,7 @@ def foo(file):
     alg.SetInputData(mesh)
 
     progress_bar = False
-    _update_alg(alg, progress_bar, 'Decimating Mesh')
+    _update_alg(alg, progress_bar, "Decimating Mesh")
     decimated_mesh = _get_output(alg)
 
     initialPoints_vtk = pyvista.convert_array(alg.GetInitialPoints().GetData())
@@ -49,7 +49,7 @@ def foo(file):
     edgeCosts_vtk = pyvista.convert_array(alg.GetInitialEdgeCosts())
     initialQuadrics_vtk = pyvista.convert_array(alg.GetInitialQuadrics())
 
-    #Sort edges_vtk (and consequently edgeCosts_vtk and newpoints_vtk) by lexicographic order to match the order of edges in numba implementation
+    # Sort edges_vtk (and consequently edgeCosts_vtk and newpoints_vtk) by lexicographic order to match the order of edges in numba implementation
     edges_vtk.sort(axis=1)
     ordering = np.lexsort((edges_vtk[:, 1], edges_vtk[:, 0]))
     edges_vtk = edges_vtk[ordering]
@@ -64,14 +64,14 @@ def foo(file):
         "initialQuadrics": initialQuadrics_vtk,
     }
 
-    #With Numba
+    # With Numba
     points = mesh.points
     triangles = mesh.faces.reshape(-1, 4)[:, 1:].T
     quadrics = initialize_quadrics_numba(points, triangles)
-    # Are there boundary edges?
+    # Are there boundary edges?
     repeated_edges = compute_edges(triangles, repeated=True)
     check_boundary_constraints_numba(repeated_edges)
-    # Compute the cost for each edge
+    # Compute the cost for each edge
     edges = compute_edges(triangles)
     costs, target_points = intialize_costs(edges, quadrics, points)
 
@@ -83,34 +83,38 @@ def foo(file):
         "initialQuadrics": quadrics,
     }
 
-
     return vtk_data, numba_data
 
 
 def test_on_scape():
     for i in range(6):
-
         vtk_data, numba_data = foo("data/mesh00{}.ply".format(i))
         for key in numba_data.keys():
-            assert np.allclose(vtk_data[key], numba_data[key], rtol=1e-1, atol=1e-1), "Error in {}".format(key)
+            assert np.allclose(
+                vtk_data[key], numba_data[key], rtol=1e-1, atol=1e-1
+            ), "Error in {}".format(key)
+
 
 def test_on_bunny_coarse():
     mesh = pyvista.read("data/bunny_coarse.ply")
     mesh.plot(show_edges=True)
     vtk_data, numba_data = foo("data/bunny_coarse.ply")
     for key in numba_data.keys():
-        assert np.allclose(vtk_data[key], numba_data[key], rtol=1e-1, atol=1e-1), "Error in {}".format(key)
+        assert np.allclose(
+            vtk_data[key], numba_data[key], rtol=1e-1, atol=1e-1
+        ), "Error in {}".format(key)
+
 
 def test_on_bunny():
     mesh = pyvista.read("data/bunny.ply")
     mesh.plot(show_edges=True)
     vtk_data, numba_data = foo("data/bunny.ply")
     for key in numba_data.keys():
-        assert np.allclose(vtk_data[key], numba_data[key], rtol=1e-1, atol=1e-1), "Error in {}".format(key)
+        assert np.allclose(
+            vtk_data[key], numba_data[key], rtol=1e-1, atol=1e-1
+        ), "Error in {}".format(key)
 
 
 if __name__ == "__main__":
     test_on_scape()
     test_on_bunny()
-
-
