@@ -1,6 +1,9 @@
 import numpy as np
 import numba as nb
 
+# TODO : implement quadric computation for boundary edges -> Done
+# TODO : implement singular matrix case
+
 
 def compute_edges(triangles, repeated=False):
     repeated_edges = np.concatenate(
@@ -65,7 +68,9 @@ def initialize_quadrics_numba(vertices, triangles):
 
 
 @nb.jit(nopython=True, fastmath=True, cache=True)
-def check_boundary_constraints_numba(repeated_edges):
+def check_boundary_constraints_numba(vertices, repeated_edges, triangles):
+    boundary_quadrics = np.zeros((vertices.shape[0], 11))
+
     n_edges = repeated_edges.shape[1]
     n_boundary_edges = 0
     # Identify boundary edges
@@ -74,19 +79,68 @@ def check_boundary_constraints_numba(repeated_edges):
     for i in range(1, n_edges):
         if repeated_edges[0, i] == e0 and repeated_edges[1, i] == e1:
             boundary = False
+
         else:
             if boundary:
                 n_boundary_edges += 1
-                print("Boundary edge: ", e0, e1)
+                # print("Boundary edge: ", e0, e1)
+
+                for j in range(triangles.shape[1]):
+                    t = triangles[:, j]
+                    if (
+                        (t[0] == e0 and t[1] == e1)
+                        or (t[1] == e0 and t[2] == e1)
+                        or (t[0] == e0 and t[2] == e1)
+                        or (t[0] == e1 and t[1] == e0)
+                        or (t[1] == e1 and t[2] == e0)
+                        or (t[0] == e1 and t[2] == e0)
+                    ):
+                        # print("Corresponding triangle: ", t)
+                        assert e0 in t
+                        assert e1 in t
+
+                        for k in t:
+                            if k != e0 and k != e1:
+                                t0 = k
+                        t1 = vertices[e0]
+                        t2 = vertices[e1]
+
+                        u = t2 - t1
+                        v = t1 - t0
+                        n = (
+                            v - (np.sum(u * v) / np.sum(u * u)) * u
+                        )  # n is orthogonal to the boundary edge [e0, e1]
+                        n = n / np.sqrt(np.sum(n * n))  # normalize n
+                        w = np.sum(
+                            u * u
+                        )  # the weight corresponds to the square length of the boundary edge
+
+                        d = -np.sum(n * t1)
+                        Q = np.zeros(11 + 4 * 3)
+                        Q[0] = n[0] * n[0]
+                        Q[1] = n[0] * n[1]
+                        Q[2] = n[0] * n[2]
+                        Q[3] = n[0] * d
+                        Q[4] = n[1] * n[1]
+                        Q[5] = n[1] * n[2]
+                        Q[6] = n[1] * d
+                        Q[7] = n[2] * n[2]
+                        Q[8] = n[2] * d
+                        Q[9] = d * d
+                        Q[10] = 1
+                        Q = Q * w
+
+                        for indice in range(11):
+                            boundary_quadrics[e0][indice] += Q[indice]
+                            boundary_quadrics[e1][indice] += Q[indice]
+
             e0, e1 = repeated_edges[:, i]
             boundary = True
 
-    if boundary:
-        print("Boundary edge: ", e0, e1)
-        n_boundary_edges += 1
+    # if n_boundary_edges == 0:s
+    #     print("No boundary edges found")
 
-    if n_boundary_edges == 0:
-        print("No boundary edges found")
+    return boundary_quadrics
 
 
 @nb.jit(nopython=True, fastmath=True)
@@ -116,7 +170,7 @@ def compute_cost(edge, Quadrics):
 
     else:
         print("Singular matrix")
-        raise NotImplementedError
+        raise NotImplementedError("Singular matrix")
     # Ignoring for the moment the case where this is degenerate
 
     cost = 0.0
