@@ -285,7 +285,7 @@ def collapse(edges, costs, targetPoints, quadrics, points, n_points_to_remove=50
                     )
                     and (edges[i][0] != edges[i][1])
                 ):
-                    costs[i], newpoints[i] = compute_cost(edges[i], Quadrics)
+                    costs[i], newpoints[i] = compute_cost(edges[i], Quadrics, points)
 
     new_vertices = np.zeros(
         (vertices.shape[0] - n_points_to_remove, 3), dtype=np.float32
@@ -308,7 +308,10 @@ def _do_decimation(mesh, target_rate=0.5):
 
     # Are there boundary edges?
     repeated_edges = compute_edges(triangles, repeated=True)
-    check_boundary_constraints_numba(repeated_edges)
+    boundary_quadrics = check_boundary_constraints_numba(
+        points, repeated_edges, triangles
+    )
+    quadrics += boundary_quadrics
     # Compute the cost for each edge
     edges = compute_edges(triangles)
     costs, target_points = intialize_costs(edges, quadrics, points)
