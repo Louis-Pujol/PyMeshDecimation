@@ -2,7 +2,7 @@ import numpy as np
 import numba as nb
 
 # TODO : implement quadric computation for boundary edges -> Done
-# TODO : implement singular matrix case
+# TODO : implement singular matrix case -> Done
 
 
 def compute_edges(triangles, repeated=False):
@@ -144,7 +144,7 @@ def check_boundary_constraints_numba(vertices, repeated_edges, triangles):
 
 
 @nb.jit(nopython=True, fastmath=True)
-def compute_cost(edge, Quadrics):
+def compute_cost(edge, Quadrics, vertices):
     pt0, pt1 = edge
     tmpQuad = Quadrics[pt0] + Quadrics[pt1]
     A = np.zeros((3, 3))
@@ -164,13 +164,39 @@ def compute_cost(edge, Quadrics):
     b[1] = -tmpQuad[6]
     b[2] = -tmpQuad[8]
 
+    error = 1e-10
+
     norm = np.max(np.sqrt(np.sum(A * A, axis=1)))
-    if np.linalg.det(A) / (norm**3) > 1e-10:
+    if np.linalg.det(A) / (norm**3) > error:
         x = np.linalg.solve(A, b)
 
     else:
-        print("Singular matrix")
-        raise NotImplementedError("Singular matrix")
+        # print("Singular matrix")
+        # raise NotImplementedError("Singular matrix")
+
+        pt0 = vertices[pt0]
+        pt1 = vertices[pt1]
+
+        v = pt1 - pt0
+
+        tmp2 = np.zeros(3)
+        tmp2[0] = A[0][0] * v[0] + A[0][1] * v[1] + A[0][2] * v[2]
+        tmp2[1] = A[1][0] * v[0] + A[1][1] * v[1] + A[1][2] * v[2]
+        tmp2[2] = A[2][0] * v[0] + A[2][1] * v[1] + A[2][2] * v[2]
+
+        if np.sum(tmp2 * tmp2) > error:
+            tmp = np.zeros(3)
+            tmp[0] = A[0][0] * pt0[0] + A[0][1] * pt0[1] + A[0][2] * pt0[2]
+            tmp[1] = A[1][0] * pt0[0] + A[1][1] * pt0[1] + A[1][2] * pt0[2]
+            tmp[2] = A[2][0] * pt0[0] + A[2][1] * pt0[1] + A[2][2] * pt0[2]
+            tmp = b - tmp
+            c = np.sum(tmp * tmp2) / np.sum(tmp2 * tmp2)
+
+            x = pt0 + c * v
+
+        else:
+            x = 0.5 * (pt0 + pt1)
+
     # Ignoring for the moment the case where this is degenerate
 
     cost = 0.0
@@ -193,7 +219,7 @@ def intialize_costs(edges, Quadrics, vertices):
     newpoints = np.zeros((n_edges, 3))
 
     for i in range(n_edges):
-        costs[i], newpoints[i] = compute_cost(edges[:, i], Quadrics)
+        costs[i], newpoints[i] = compute_cost(edges[:, i], Quadrics, vertices)
 
     return costs, newpoints
 
