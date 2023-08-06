@@ -6,10 +6,10 @@ The goal of this package is to provide a pure python implementation of the quadr
 Core functions are implemented in numba and cython and the project has started to be organize as a distribution package.
 
 Install with :
-pip uninstall pyDecimation (if necessary)
-python -m build
-cd dist
-pip install *.whl
+- pip uninstall pyDecimation (if necessary)
+- python -m build
+- cd dist
+- pip install *.whl
 
 Then to check if the installation is correct (from the root folder of the project):
 - cd test_script
