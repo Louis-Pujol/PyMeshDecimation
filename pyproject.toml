@@ -1,0 +1,16 @@
+[project]
+name = "pyDecimation"
+description = "Mesh decimation in python"
+version = "0.0.1"
+authors = [
+    { name = "Louis Pujol" }
+]
+dependencies = [
+    "numpy",
+    "numba",
+]
+
+
+[build-system]
+requires = ["numpy", "numba", "cython", "setuptools", "wheel"]
+build-backend = "setuptools.build_meta"

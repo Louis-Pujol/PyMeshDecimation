@@ -351,7 +351,7 @@ def decimate(
 
 
 # Old functions
-if False:
+if True:
 
     @nb.jit(nopython=True, fastmath=True, cache=True)
     def det3x3(mat):
