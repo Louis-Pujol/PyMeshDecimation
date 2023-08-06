@@ -20,3 +20,6 @@ build-backend = "setuptools.build_meta"
 [tool.cibuildwheel]
 # Disable building PyPy wheels on all platforms
 skip = "pp*"
+CIBW_ARCHS_LINUX: "x86_64"
+# Skip CPython 3.6 and CPython 3.7
+CIBW_SKIP: cp36-* cp37-*
