@@ -1,5 +1,5 @@
 [project]
-name = "pyDecimation"
+name = "pymeshdecimation"
 description = "Mesh decimation in python"
 version = "0.0.1"
 authors = [
