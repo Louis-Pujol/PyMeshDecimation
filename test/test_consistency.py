@@ -21,7 +21,6 @@
 #     assert np.allclose(quadrics1, quadrics2)
 
 
-
 #     print("Compute boundary quadrics")
 
 #     repeated_edges = pymeshdecimation.numba._compute_edges(
@@ -53,7 +52,6 @@
 
 #     Q1 = quadrics1 + boundary_quadrics1
 #     Q2 = quadrics2 + boundary_quadrics2
-
 
 
 #     costs1, newpoints1 = pymeshdecimation.cython._intialize_costs(

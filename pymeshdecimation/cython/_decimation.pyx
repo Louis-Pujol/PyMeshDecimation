@@ -557,3 +557,46 @@ def decimate(
 
 
     return output_points, collapses, newpoints
+
+
+
+
+def _replay_loop(FLOAT_DTYPE_t[:, :] points, FLOAT_DTYPE_t[:, :] quadrics, INT_DTYPE_t[:, :] collapses_history):
+
+    cdef INT_DTYPE_t n_collapses = collapses_history.shape[0]
+    cdef INT_DTYPE_t[:] edge = np.zeros([2], dtype=INT_DTYPE)
+    cdef FLOAT_DTYPE_t[:] newpoint = np.zeros([3], dtype=FLOAT_DTYPE)
+    cdef INT_DTYPE_t e0, e1
+    cdef INT_DTYPE_t i, k
+    cdef FLOAT_DTYPE_t cost
+
+    for i in range(n_collapses):
+        e0, e1 = collapses_history[i, :]
+        for k in range(11):
+            quadrics[e0, k] += quadrics[e1, k]
+        edge[0] = e0
+        edge[1] = e1
+        cost, newpoint = _compute_cost(edge, quadrics, points)
+        points[e0, :] = newpoint
+
+    return np.asarray(points)
+
+
+def replay_decimation(
+    points,
+    triangles,
+    collapses_history,
+):
+
+    quadrics = _initialize_quadrics(points, triangles)
+    repeated_edges = _compute_edges(triangles, repeated=True)
+    boundary_quadrics = _compute_boundary_quadrics(points, repeated_edges, triangles)
+    quadrics += boundary_quadrics
+
+    newpoints = _replay_loop(points.copy(), quadrics, collapses_history)
+    
+    keep = np.setdiff1d(
+        np.arange(len(points)), np.array(collapses_history[:, 1])
+    )  # Indices of the points that must be kept after decimation
+
+    return newpoints[keep]

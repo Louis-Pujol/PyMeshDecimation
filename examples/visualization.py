@@ -3,7 +3,7 @@ import pyvista
 import numpy as np
 import pyvista.examples
 
-import pyDecimation
+import pymeshdecimation
 
 
 # mesh = pyvista.examples.download_cow().triangulate()
@@ -12,10 +12,7 @@ points = np.array(mesh.points, dtype=np.float64)
 triangles = mesh.faces.reshape(-1, 4)[:, 1:].T
 
 
-#############################################################
-print("Total decimation")
-
-output_points, collapses, newpoints = pyDecimation.numba.decimate(
+output_points, collapses, newpoints = pymeshdecimation.numba.decimate(
     points.copy(),
     triangles.copy(),
     target_reduction=0.9,
@@ -23,7 +20,7 @@ output_points, collapses, newpoints = pyDecimation.numba.decimate(
 
 
 start = time()
-output_points, collapses, newpoints = pyDecimation.cython.decimate(
+output_points, collapses, newpoints = pymeshdecimation.cython.decimate(
     points.copy(),
     triangles.copy(),
     target_reduction=0.9,
@@ -36,7 +33,7 @@ p.add_mesh(mesh, color="grey", opacity=0.5)
 p.show()
 
 start = time()
-output_points, collapses, newpoints = pyDecimation.numba.decimate(
+output_points, collapses, newpoints = pymeshdecimation.numba.decimate(
     points.copy(),
     triangles.copy(),
     target_reduction=0.9,

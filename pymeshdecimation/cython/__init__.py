@@ -6,4 +6,5 @@ from ._decimation import (
     _compute_cost,
     _intialize_costs,
     _collapse,
+    _replay_loop,
 )
