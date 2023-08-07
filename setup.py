@@ -7,21 +7,20 @@ from Cython.Build import cythonize
 
 
 extension = Extension(
-    name="pyDecimation.cython._decimation",
-    sources=[join("pyDecimation", "cython", "_decimation.pyx")],
+    name="pymeshdecimation.cython._decimation",
+    sources=[join("pymeshdecimation", "cython", "_decimation.pyx")],
     include_dirs=[np.get_include()],
 )
 
 
 setup(
-    name="pyDecimation",
+    name="pymeshdecimation",
     version="0.0.1",
     description="Mesh decimation in python",
     author="Louis Pujol",
     setup_requires=["cython", "numpy", "numba"],
     install_requires=["numpy", "numba"],
-    # packages=["pyDecimation", "pyDecimation.cython", "pyDecimation.numba"],
     packages=find_packages(),
-    package_data={"pyDecimation.cython": ["*.pyx", "*.pxd"]},
+    package_data={"pymeshdecimation.cython": ["*.pyx", "*.pxd"]},
     ext_modules=cythonize([extension]),
 )
