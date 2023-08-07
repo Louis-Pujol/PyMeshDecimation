@@ -1,7 +1,7 @@
 [project]
 name = "pymeshdecimation"
 description = "Mesh decimation in python"
-version = "0.0.1"
+version = "0.0.1a"
 authors = [
     { name = "Louis Pujol" }
 ]

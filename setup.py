@@ -15,7 +15,7 @@ extension = Extension(
 
 setup(
     name="pymeshdecimation",
-    version="0.0.1",
+    version="0.0.1a",
     description="Mesh decimation in python",
     author="Louis Pujol",
     setup_requires=["cython", "numpy", "numba"],
