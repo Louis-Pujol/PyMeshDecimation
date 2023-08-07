@@ -1,9 +1,6 @@
-# pyDecimation
-The goal of this package is to provide a pure python implementation of the quadric decimation algorithm of VTK that keep track of the collapse operations.
+# PyMeshDecimation
 
-# Current state :
-
-Core functions are implemented in numba and cython and the project has started to be organize as a distribution package.
+Quadric Decimation for triangular meshes in Cython/Numba.
 
 # Installation : 
 
