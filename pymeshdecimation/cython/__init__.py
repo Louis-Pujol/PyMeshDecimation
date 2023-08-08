@@ -4,7 +4,7 @@ from ._decimation import (
     _compute_boundary_quadrics,
     _compute_edges,
     _compute_cost,
-    _intialize_costs,
+    _initialize_costs,
     _collapse,
     _replay_loop,
 )

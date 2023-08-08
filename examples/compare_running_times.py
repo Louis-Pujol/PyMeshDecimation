@@ -10,7 +10,7 @@ import pyvista.examples
 import pymeshdecimation
 
 
-# mesh = pyvista.examples.download_bunny()
+mesh = pyvista.examples.download_bunny()
 mesh = pyvista.Sphere()
 points = np.array(mesh.points, dtype=np.float64)
 triangles = mesh.faces.reshape(-1, 4)[:, 1:].T
@@ -22,7 +22,7 @@ print("Initialize quadrics")
 
 
 quadrics1 = pymeshdecimation.cython._initialize_quadrics(
-    points=points.copy(), triangles=triangles.copy()
+    points=points.copy(), triangles=triangles.T.copy()
 )
 quadrics2 = pymeshdecimation.numba._initialize_quadrics(
     points=points.copy(), triangles=triangles.copy()
@@ -33,7 +33,7 @@ assert np.allclose(quadrics1, quadrics2)
 start = time()
 for _ in range(1):
     pymeshdecimation.cython._initialize_quadrics(
-        points=points.copy(), triangles=triangles.copy()
+        points=points.copy(), triangles=triangles.T.copy()
     )
 print(f"Cython implementation : {time() - start}")
 
@@ -58,8 +58,8 @@ edges = pymeshdecimation.numba._compute_edges(
 
 boundary_quadrics1 = pymeshdecimation.cython._compute_boundary_quadrics(
     points=points.copy(),
-    repeated_edges=repeated_edges.copy(),
-    triangles=triangles.copy(),
+    repeated_edges=repeated_edges.T.copy(),
+    triangles=triangles.T.copy(),
 )
 boundary_quadrics2 = pymeshdecimation.numba._compute_boundary_quadrics(
     points=points.copy(),
@@ -73,8 +73,8 @@ start = time()
 for _ in range(1):
     pymeshdecimation.cython._compute_boundary_quadrics(
         points=points.copy(),
-        repeated_edges=repeated_edges.copy(),
-        triangles=triangles.copy(),
+        repeated_edges=repeated_edges.T.copy(),
+        triangles=triangles.T.copy(),
     )
 print(f"Cython implementation : {time() - start}")
 
@@ -153,8 +153,8 @@ print()
 #############################################################
 print("Initialize costs")
 
-costs1, newpoints1 = pymeshdecimation.cython._intialize_costs(
-    edges=edges.copy(), quadrics=Q1.copy(), points=points.copy()
+costs1, newpoints1 = pymeshdecimation.cython._initialize_costs(
+    edges=edges.T.copy(), quadrics=Q1.copy(), points=points.copy()
 )
 costs2, newpoints2 = pymeshdecimation.numba._intialize_costs(
     edges=edges.copy(), quadrics=Q2.copy(), points=points.copy()
@@ -166,8 +166,8 @@ assert np.allclose(newpoints1, newpoints2)
 
 start = time()
 for _ in range(1):
-    pymeshdecimation.cython._intialize_costs(
-        edges=edges.copy(), quadrics=Q1.copy(), points=points.copy()
+    pymeshdecimation.cython._initialize_costs(
+        edges=edges.T.copy(), quadrics=Q1.copy(), points=points.copy()
     )
 print(f"Cython implementation : {time() - start}")
 
@@ -229,7 +229,7 @@ print()
 #############################################################
 print("Total decimation")
 
-output_points, collapses, newpoints = pymeshdecimation.numba.decimate(
+output_points_numba, collapses, newpoints = pymeshdecimation.numba.decimate(
     points.copy(),
     triangles.copy(),
     target_reduction=0.9,
@@ -243,6 +243,8 @@ output_points, collapses, newpoints = pymeshdecimation.cython.decimate(
     target_reduction=0.9,
 )
 print(f"Cython implementation : {time() - start}")
+
+assert np.allclose(output_points, output_points_numba)
 
 start = time()
 output_points, collapses, newpoints = pymeshdecimation.numba.decimate(

@@ -91,7 +91,7 @@ def _compute_boundary_quadrics(points, repeated_edges, triangles):
                     ):
                         for k in t:
                             if k != e0 and k != e1:
-                                t0 = k
+                                t0 = points[k]
                         t1 = points[e0]
                         t2 = points[e1]
 
