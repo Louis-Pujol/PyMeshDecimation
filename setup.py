@@ -13,6 +13,13 @@ extension = Extension(
     define_macros=[("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")],
 )
 
+extension2 = Extension(
+    name="pymeshdecimation.cython_legacy._decimation",
+    sources=[join("pymeshdecimation", "cython_legacy", "_decimation.pyx")],
+    include_dirs=[np.get_include()],
+    define_macros=[("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")],
+)
+
 
 setup(
     name="pymeshdecimation",
@@ -22,6 +29,9 @@ setup(
     setup_requires=["cython", "numpy", "numba"],
     install_requires=["numpy", "numba"],
     packages=find_packages(),
-    package_data={"pymeshdecimation.cython": ["*.pyx", "*.pxd"]},
-    ext_modules=cythonize([extension]),
+    package_data={
+        "pymeshdecimation.cython": ["*.pyx", "*.pxd"],
+        "pymeshdecimation.cython_legacy": ["*.pyx", "*.pxd"],
+    },
+    ext_modules=cythonize([extension, extension2]),
 )

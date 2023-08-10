@@ -1,10 +1,10 @@
-from ._decimation import *
 from ._decimation import (
-    _initialize_quadrics,
-    _compute_boundary_quadrics,
+    _nonboundary_quadrics,
+    _boundary_quadrics,
     _compute_edges,
-    _compute_cost,
     _initialize_costs,
     _collapse,
-    _replay_loop,
+    decimate,
+    replay_decimation,
+    _replay_decimation,
 )

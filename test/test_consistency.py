@@ -1,66 +1,88 @@
-# import pymeshdecimation
-# import pyvista
-# import numpy as np
+import pymeshdecimation as pmd
+import pyvista
+import pyvista.examples
+import numpy as np
+from time import time
 
 
-# def test_consistency():
+def test_numba_cython_consistency():
+    """Test that the numba and cython implementations are consistent
 
-#     mesh = pyvista.Sphere()
-#     # mesh = pyvista.examples.download_bunny()
-#     mesh = pyvista.Sphere()
-#     points = np.array(mesh.points, dtype=np.float64)
-#     triangles = mesh.faces.reshape(-1, 4)[:, 1:].T
+    We test that the core function of the algorithm are consistent between the
+    cython and numba implementations.
 
-#     quadrics1 = pymeshdecimation.cython._initialize_quadrics(
-#         points=points.copy(), triangles=triangles.copy()
-#     )
-#     quadrics2 = pymeshdecimation.numba._initialize_quadrics(
-#         points=points.copy(), triangles=triangles.copy()
-#     )
+    More precisely we chack that :
+    - the computation of the quadrics is consistent
+    - the computation of the edges' costs is consistent
+    - the collapse step have the same results
 
-#     assert np.allclose(quadrics1, quadrics2)
+    Note that the test can fail for some meshes, the sphere being an example.
+    We suspect that this is due to the fact that the sphere is a very regular
+    mesh and that the collapse step is not deterministic in this case.
+
+    If the test fails, it is recommended to visualize the decimated meshes to
+    check that both implementations give good results.
+    """
+
+    mesh = pyvista.examples.download_bunny_coarse().clean()
+    points = np.array(mesh.points.copy(), dtype=np.float64)
+    n_points_to_remove = int(0.9 * len(points))
+    triangles = np.array(mesh.faces.copy().reshape(-1, 4)[:, 1:], dtype=np.int64)
+
+    # Compute the non boundary quadrics
+    nonboundary_quadrics_cython = pmd.cython._nonboundary_quadrics(
+        points=points, triangles=triangles
+    )
+    nonboundary_quadrics_numba = pmd.numba._initialize_quadrics(
+        points=points, triangles=triangles.T
+    )
+    assert np.allclose(nonboundary_quadrics_cython, nonboundary_quadrics_numba)
+
+    # Compute the boundary quadrics
+    boundary_quadrics_cython = pmd.cython._boundary_quadrics(
+        points=points, triangles=triangles
+    )
+    repeated_edges = pmd.numba._compute_edges(triangles=triangles.T, repeated=True)
+    boundary_quadrics_numba = pmd.numba._compute_boundary_quadrics(
+        points=points, triangles=triangles.T, repeated_edges=repeated_edges
+    )
+    assert np.allclose(boundary_quadrics_cython, boundary_quadrics_numba)
+
+    quadrics_numba = nonboundary_quadrics_numba + boundary_quadrics_numba
+    quadrics_cython = nonboundary_quadrics_cython + boundary_quadrics_cython
+
+    # Initialize costs
+    edges_numba = pmd.numba._compute_edges(triangles=triangles.T)
+    costs_numba, target_points_numba = pmd.numba._intialize_costs(
+        points=points, edges=edges_numba, quadrics=nonboundary_quadrics_numba
+    )
+    edges_cython = pmd.cython._compute_edges(triangles=triangles)
+    costs_cython, target_points_cython = pmd.cython._initialize_costs(
+        points=points, edges=edges_cython, quadrics=nonboundary_quadrics_cython
+    )
+    assert np.allclose(costs_numba, costs_cython)
+
+    # Collapse edges
+    decimated_points_numba, collapses_numba, _ = pmd.numba._collapse(
+        points=points,
+        edges=edges_numba.T,
+        costs=costs_numba,
+        newpoints=target_points_numba,
+        quadrics=quadrics_numba,
+        n_points_to_remove=n_points_to_remove,
+    )
+
+    decimated_points_cython, collapses_cython = pmd.cython._collapse(
+        points=points,
+        edges=edges_cython,
+        costs=costs_cython,
+        target_points=target_points_cython,
+        quadrics=quadrics_cython,
+        n_points_to_remove=n_points_to_remove,
+    )
+
+    assert np.allclose(decimated_points_numba, decimated_points_cython)
+    assert np.allclose(collapses_numba, collapses_cython)
 
 
-#     print("Compute boundary quadrics")
-
-#     repeated_edges = pymeshdecimation.numba._compute_edges(
-#         triangles=triangles.copy(), repeated=True
-#     )
-#     repeated_edges2 = pymeshdecimation.cython._compute_edges(
-#         triangles=triangles.copy(), repeated=True
-#     )
-
-#     edges = pymeshdecimation.numba._compute_edges(triangles=triangles.copy(), repeated=False)
-#     edges2 = pymeshdecimation.cython._compute_edges(triangles=triangles.copy(), repeated=False)
-
-#     assert np.allclose(repeated_edges, repeated_edges2)
-#     assert np.allclose(edges, edges2)
-
-#     boundary_quadrics1 = pymeshdecimation.cython._compute_boundary_quadrics(
-#         points=points.copy(),
-#         repeated_edges=repeated_edges.copy(),
-#         triangles=triangles.copy(),
-#     )
-#     boundary_quadrics2 = pymeshdecimation.numba._compute_boundary_quadrics(
-#         points=points.copy(),
-#         repeated_edges=repeated_edges.copy(),
-#         triangles=triangles.copy(),
-#     )
-
-#     assert np.allclose(boundary_quadrics1, boundary_quadrics2)
-
-
-#     Q1 = quadrics1 + boundary_quadrics1
-#     Q2 = quadrics2 + boundary_quadrics2
-
-
-#     costs1, newpoints1 = pymeshdecimation.cython._intialize_costs(
-#         edges=edges.copy(), quadrics=Q1.copy(), points=points.copy()
-#     )
-#     costs2, newpoints2 = pymeshdecimation.numba._intialize_costs(
-#         edges=edges.copy(), quadrics=Q2.copy(), points=points.copy()
-#     )
-
-
-#     assert np.allclose(costs1, costs2)
-#     assert np.allclose(newpoints1, newpoints2)
+test_numba_cython_consistency()

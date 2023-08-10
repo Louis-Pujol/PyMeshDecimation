@@ -1,21 +1,50 @@
 cimport cython
 
-
 from libc.math cimport sqrt
 cimport numpy as cnp
 cnp.import_array()
 import numpy as np
-
+from collections import namedtuple
 
 INT_DTYPE = np.int64
 FLOAT_DTYPE = np.double
-
-# "ctypedef" assigns a corresponding compile-time type to DTYPE_t. For
-# every type in the numpy module there's a corresponding compile-time
-# type with a _t-suffix.
 ctypedef cnp.int64_t INT_DTYPE_t
 ctypedef cnp.double_t FLOAT_DTYPE_t
 
+
+DecimationOutput = namedtuple(
+        typename="DecimationOutput",
+        field_names=[
+            "decimated_points",
+            "decimated_triangles",
+            "indice_mapping",
+            "collapses",
+        ]
+    )
+
+##################################################################################################
+
+# Utility functions for dim 3 vectors
+@cython.boundscheck(False)
+@cython.wraparound(False)
+def dot3(FLOAT_DTYPE_t[:] x, FLOAT_DTYPE_t[:] y) -> FLOAT_DTYPE_t:
+    return x[0] * y[0] + x[1] * y[1] + x[2] * y[2]
+
+##################################################################################################
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+def squared_norm3(FLOAT_DTYPE_t[:] x):
+    return x[0] ** 2 + x[1] ** 2 + x[2] ** 2
+
+##################################################################################################
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+def norm3(FLOAT_DTYPE_t[:] x):
+    return sqrt(squared_norm3(x))
+
+##################################################################################################
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
@@ -29,80 +58,78 @@ def det3x3(FLOAT_DTYPE_t[:, :] mat):
     )
     return det
 
-@cython.boundscheck(False)
-@cython.wraparound(False)
-def solve3x3(FLOAT_DTYPE_t[:, :] A, FLOAT_DTYPE_t[:] b):
+##################################################################################################
 
-    cdef FLOAT_DTYPE_t d, d1, d2, d3
-    cdef cnp.ndarray[FLOAT_DTYPE_t, ndim=1] x = np.zeros([3], dtype=FLOAT_DTYPE)
+# @cython.boundscheck(False)
+# @cython.wraparound(False)
+# def solve3x3(FLOAT_DTYPE_t[:, :] A, FLOAT_DTYPE_t[:] b, FLOAT_DTYPE_t[:] x):
 
-    cdef FLOAT_DTYPE_t a00 = A[0, 0]
-    cdef FLOAT_DTYPE_t a01 = A[0, 1]
-    cdef FLOAT_DTYPE_t a02 = A[0, 2]
-    cdef FLOAT_DTYPE_t a11 = A[1, 1]
-    cdef FLOAT_DTYPE_t a12 = A[1, 2]
-    cdef FLOAT_DTYPE_t a22 = A[2, 2]
-    cdef FLOAT_DTYPE_t b0 = b[0]
-    cdef FLOAT_DTYPE_t b1 = b[1]
-    cdef FLOAT_DTYPE_t b2 = b[2]
+#     d = det3x3(A)
 
-    d = det3x3(A)
-
-    d1 = (
-        b0 * (a11 * a22 - a12 * a12)
-        - b1 * (a01 * a22 - a02 * a12)
-        + b2 * (a01 * a12 - a02 * a11)
-    )
+#     x[0] = (
+#         b0 * (A[1, 1] * A[2, 2] - A[1, 2] * A[1, 2])
+#         - b1 * (A[0, 1] * A[2, 2] - A[0, 2] * A[1, 2])
+#         + b2 * (A[0, 1] * A[1, 2] - A[0, 2] * A[1, 1])
+#     ) / d
     
-    d2 = (
-        a00 * (b1 * a22 - b2 * a12)
-        - a01 * (b0 * a22 - b2 * a02)
-        + a02 * (b0 * a12 - b1 * a02)
+#     x[1] = (
+#         A[0, 0] * (b1 * A[2, 2] - b2 * A[1, 2])
+#         - A[0, 1] * (b0 * A[2, 2] - b2 * A[0, 2])
+#         + A[0, 2] * (b0 * A[1, 2] - b1 * A[0, 2])
+#     ) / d
+
+
+#     x[3] = (
+#         A[0, 0] * (A[1, 1] * b2 - A[1, 2] * b1)
+#         - A[0, 1] * (A[0, 1] * b2 - A[1, 2] * b0)
+#         + A[0, 2] * (A[0, 1] * b1 - A[1, 1] * b0)
+#     ) / d
+
+##################################################################################################
+
+def _compute_edges(triangles, repeated=False):
+    repeated_edges = np.concatenate(
+        [
+            triangles[:, [0, 1]],
+            triangles[:, [1, 2]],
+            triangles[:, [0, 2]],
+        ],
+        axis=0,
     )
 
+    repeated_edges.sort(axis=1)
+    # Remove the duplicates and return
+    if not repeated:
+        return np.unique(repeated_edges, axis=0)
 
-    d3 = (
-        a00 * (a11 * b2 - a12 * b1)
-        - a01 * (a01 * b2 - a12 * b0)
-        + a02 * (a01 * b1 - a11 * b0)
-    )
+    else:
+        # return repeated_edges
+        ordering = np.lexsort(repeated_edges.T)
+        return repeated_edges[ordering]
 
-    x[0] = d1 / d
-    x[1] = d2 / d
-    x[2] = d3 / d
-
-    return x
+##################################################################################################
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-def _initialize_quadrics(FLOAT_DTYPE_t[:, :] points, INT_DTYPE_t[:, :] triangles):
-    """Compute the quadrics for the vertices of the mesh ignoring boundaries.
-
-    Args:
-        points (Nx3 float64 array): The points of the mesh.
-        triangles (Kx3 int64 array): The triangles of the mesh.
-
-    Returns:
-        Nx11 float64 array: The quadrics for the vertices of the mesh.
-    """
+def _nonboundary_quadrics(FLOAT_DTYPE_t[:, :] points, INT_DTYPE_t[:, :] triangles):
 
     cdef int n_points = points.shape[0]
     cdef int n_triangles = triangles.shape[0]
     cdef FLOAT_DTYPE_t[:, :] quadrics = np.zeros([n_points, 11], dtype=FLOAT_DTYPE)
-    # cdef FLOAT_DTYPE_t[:, :] quadrics_view = quadrics
-    cdef cnp.ndarray[FLOAT_DTYPE_t, ndim=1] Q = np.zeros([11], dtype=FLOAT_DTYPE)
+    cdef FLOAT_DTYPE_t[:] Q = np.zeros([11], dtype=FLOAT_DTYPE)
     cdef int i, j, k
     cdef FLOAT_DTYPE_t d
 
-    cdef cnp.ndarray[FLOAT_DTYPE_t, ndim=1] p0 = np.zeros([3], dtype=FLOAT_DTYPE)
-    cdef cnp.ndarray[FLOAT_DTYPE_t, ndim=1] p1 = np.zeros([3], dtype=FLOAT_DTYPE)
-    cdef cnp.ndarray[FLOAT_DTYPE_t, ndim=1] p2 = np.zeros([3], dtype=FLOAT_DTYPE)
-    cdef cnp.ndarray[FLOAT_DTYPE_t, ndim=1] n = np.zeros([3], dtype=FLOAT_DTYPE)
+    cdef FLOAT_DTYPE_t[:] p0 = np.zeros([3], dtype=FLOAT_DTYPE)
+    cdef FLOAT_DTYPE_t[:] p1 = np.zeros([3], dtype=FLOAT_DTYPE)
+    cdef FLOAT_DTYPE_t[:] p2 = np.zeros([3], dtype=FLOAT_DTYPE)
+    cdef FLOAT_DTYPE_t[:] n = np.zeros([3], dtype=FLOAT_DTYPE)
 
 
     for i in range(n_triangles):
 
         # Get the points of the triangle
+        # p0[:] = points[triangles[i, 0], :] is slower
         for j in range(3):
             p0[j] = points[triangles[i, 0], j]
             p1[j] = points[triangles[i, 1], j]
@@ -142,31 +169,26 @@ def _initialize_quadrics(FLOAT_DTYPE_t[:, :] points, INT_DTYPE_t[:, :] triangles
 
     return np.asarray(quadrics)
 
+
+##################################################################################################
+
 @cython.boundscheck(False)
 @cython.wraparound(False)
-def _compute_boundary_quadrics(FLOAT_DTYPE_t[:, :] points, INT_DTYPE_t[:, :] repeated_edges, INT_DTYPE_t[:, :] triangles):
-    """Compute the quadrics for the boundary edges of the mesh.
+def _boundary_quadrics(FLOAT_DTYPE_t[:, :] points, INT_DTYPE_t[:, :] triangles):
 
-    Args:
-        points (Nx3 float64 array): The points of the mesh.
-        repeated_edges (M'x2 int64 array): The repeated edges of the mesh.
-        triangles (Kx3 int64 array): The triangles of the mesh.
-
-    Returns:
-        boundary_quadrics (Nx11 float64 array): The quadrics associated with the boundary.
-    """
+    cdef INT_DTYPE_t[:, :] repeated_edges = _compute_edges(triangles=np.asarray(triangles), repeated=True)
+    cdef int n_triangles = triangles.shape[0]
+    cdef int i, j, k, l
 
     cdef int n_points = points.shape[0]
     cdef int n_edges = repeated_edges.shape[0]
-    cdef int n_triangles = triangles.shape[0]
 
     cdef FLOAT_DTYPE_t[:, :] boundary_quadrics = np.zeros((n_points, 11), dtype=FLOAT_DTYPE)
-    # cdef FLOAT_DTYPE_t[:, :] boundary_quadrics_view = boundary_quadrics
 
     cdef bint boundary = 1
     cdef int e0, e1
 
-    cdef int i, j, k, l
+    
     cdef FLOAT_DTYPE_t c
     cdef INT_DTYPE_t[:] t = np.zeros([3], dtype=INT_DTYPE)
     cdef FLOAT_DTYPE_t[:] t0 = np.zeros([3], dtype=FLOAT_DTYPE)
@@ -261,27 +283,29 @@ def _compute_boundary_quadrics(FLOAT_DTYPE_t[:, :] points, INT_DTYPE_t[:, :] rep
 
     return np.asarray(boundary_quadrics)
 
-cdef FLOAT_DTYPE_t[:] pt0 = np.zeros([3], dtype=FLOAT_DTYPE)
-cdef FLOAT_DTYPE_t[:] pt1 = np.zeros([3], dtype=FLOAT_DTYPE)
-cdef FLOAT_DTYPE_t[:] tmp = np.zeros([3], dtype=FLOAT_DTYPE)
-cdef FLOAT_DTYPE_t[:] tmp2 = np.zeros([3], dtype=FLOAT_DTYPE)
-cdef FLOAT_DTYPE_t[:] v = np.zeros([3], dtype=FLOAT_DTYPE)
-cdef FLOAT_DTYPE_t[:] tmpQuad = np.zeros([11], dtype=FLOAT_DTYPE)
+
+##############################################################
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-def _compute_cost(INT_DTYPE_t[:] edge, FLOAT_DTYPE_t[:, :] quadrics, FLOAT_DTYPE_t[:, :] points):
-    
+def _compute_cost(
+    INT_DTYPE_t[:] edge,
+    FLOAT_DTYPE_t[:, :] quadrics,
+    FLOAT_DTYPE_t[:, :] points,
+    FLOAT_DTYPE_t[:] pt0 = np.zeros([3], dtype=FLOAT_DTYPE),
+    FLOAT_DTYPE_t[:] pt1 = np.zeros([3], dtype=FLOAT_DTYPE),
+    FLOAT_DTYPE_t[:] tmp = np.zeros([3], dtype=FLOAT_DTYPE),
+    FLOAT_DTYPE_t[:] tmp2 = np.zeros([3], dtype=FLOAT_DTYPE),
+    FLOAT_DTYPE_t[:] v = np.zeros([3], dtype=FLOAT_DTYPE),
+    FLOAT_DTYPE_t[:] tmpQuad = np.zeros([11], dtype=FLOAT_DTYPE),
+    FLOAT_DTYPE_t[:] x = np.zeros([3], dtype=FLOAT_DTYPE),
+    FLOAT_DTYPE_t[:] newpoint = np.zeros([4], dtype=FLOAT_DTYPE)):
+
     cdef double error = 0.0000000001
     cdef double norm
-    cdef double c
-    cdef double coast
+    cdef double c, cost
     cdef double tmp_float
     cdef int e0, e1
-
-    cdef cnp.ndarray[FLOAT_DTYPE_t, ndim=1] x = np.zeros([3], dtype=FLOAT_DTYPE)
-    cdef FLOAT_DTYPE_t[:] xview = x
-    cdef FLOAT_DTYPE_t[:] newpoint = np.zeros([4], dtype=FLOAT_DTYPE)
 
     cdef int i, j, counter
     
@@ -310,7 +334,6 @@ def _compute_cost(INT_DTYPE_t[:] edge, FLOAT_DTYPE_t[:, :] quadrics, FLOAT_DTYPE
 
 
     if det / (norm ** 3) > error:
-        # x = solve3x3(A, b)
 
         d1 = (
             - tmpQuad[3] * (tmpQuad[4] * tmpQuad[7] - tmpQuad[5] * tmpQuad[5])
@@ -359,11 +382,11 @@ def _compute_cost(INT_DTYPE_t[:] edge, FLOAT_DTYPE_t[:, :] quadrics, FLOAT_DTYPE
             c = (tmp[0] * tmp2[0] + tmp[1] * tmp2[1] + tmp[2] * tmp2[2]) / (tmp2[0] ** 2 + tmp2[1] ** 2 + tmp2[2] ** 2)
 
             for i in range(3):
-                xview[i] = pt0[i] + c * v[i]
+                x[i] = pt0[i] + c * v[i]
 
         else:
             for i in range(3):
-                xview[i] = 0.5 * (pt0[i] + pt1[i])
+                x[i] = 0.5 * (pt0[i] + pt1[i])
 
     cost = 0.0
     for i in range(3):
@@ -378,23 +401,25 @@ def _compute_cost(INT_DTYPE_t[:] edge, FLOAT_DTYPE_t[:, :] quadrics, FLOAT_DTYPE
             cost += 2 * newpoint[i] * newpoint[j] * tmpQuad[counter]
             counter += 1
 
-    return cost, x
+    return cost, np.asarray(x)
 
+
+##############################################################
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
 def _initialize_costs(INT_DTYPE_t[:, :] edges, FLOAT_DTYPE_t[:, :]  quadrics, FLOAT_DTYPE_t[:, :] points):
-    """Compute the cost of collapsing each edge in the mesh.
 
-    Args:
-        edges (Mx2 int64 array): Array of edges to collapse.
-        quadrics (Nx11 float64 array): Array of quadrics for each vertex.
-        points (Nx3 array): Array of points for each vertex.
-    
-    Returns:
-        costs (M float64 array): Array of costs for each edge.
-        newpoints (Mx3 float64 array): Array of new points for each edge.
-    """
+    # Temporary variables for _compute_cost routine
+    # there are defined here to avoid re-initialize them a lot of time
+    # cdef FLOAT_DTYPE_t[:] _pt0 = np.zeros([3], dtype=FLOAT_DTYPE)
+    # cdef FLOAT_DTYPE_t[:] _pt1 = np.zeros([3], dtype=FLOAT_DTYPE)
+    # cdef FLOAT_DTYPE_t[:] _tmp = np.zeros([3], dtype=FLOAT_DTYPE)
+    # cdef FLOAT_DTYPE_t[:] _tmp2 = np.zeros([3], dtype=FLOAT_DTYPE)
+    # cdef FLOAT_DTYPE_t[:] _v = np.zeros([3], dtype=FLOAT_DTYPE)
+    # cdef FLOAT_DTYPE_t[:] _tmpQuad = np.zeros([11], dtype=FLOAT_DTYPE)
+    # cdef FLOAT_DTYPE_t[:] _x = np.zeros([3], dtype=FLOAT_DTYPE)
+    # cdef FLOAT_DTYPE_t[:] _tmpNewpoint = np.zeros([4], dtype=FLOAT_DTYPE)
 
     cdef int n_edges = edges.shape[0]
     cdef FLOAT_DTYPE_t[:] costs = np.zeros([n_edges], dtype=FLOAT_DTYPE)
@@ -405,31 +430,46 @@ def _initialize_costs(INT_DTYPE_t[:, :] edges, FLOAT_DTYPE_t[:, :]  quadrics, FL
     cdef int i
 
     for i in range(n_edges):
-        costs[i], newpoint = _compute_cost(edges[i, :], quadrics, points)
-        # costs[i] = cost
+        costs[i], newpoint = _compute_cost(edge=edges[i, :], quadrics=quadrics, points=points, pt0=_pt0, pt1=_pt1, tmp=_tmp, tmp2=_tmp2, v=_v, tmpQuad=_tmpQuad, x=_x, newpoint=_tmpNewpoint)
         newpoints[i, :] = newpoint
 
     return np.asarray(costs), np.asarray(newpoints)
 
+
+######################################################################
+
+
+# Temporary variables for _compute_cost routine
+# there are defined here to avoid re-initialize them a lot of time
+cdef FLOAT_DTYPE_t[:] _pt0 = np.zeros([3], dtype=FLOAT_DTYPE)
+cdef FLOAT_DTYPE_t[:] _pt1 = np.zeros([3], dtype=FLOAT_DTYPE)
+cdef FLOAT_DTYPE_t[:] _tmp = np.zeros([3], dtype=FLOAT_DTYPE)
+cdef FLOAT_DTYPE_t[:] _tmp2 = np.zeros([3], dtype=FLOAT_DTYPE)
+cdef FLOAT_DTYPE_t[:] _v = np.zeros([3], dtype=FLOAT_DTYPE)
+cdef FLOAT_DTYPE_t[:] _tmpQuad = np.zeros([11], dtype=FLOAT_DTYPE)
+cdef FLOAT_DTYPE_t[:] _x = np.zeros([3], dtype=FLOAT_DTYPE)
+cdef FLOAT_DTYPE_t[:] _tmpNewpoint = np.zeros([4], dtype=FLOAT_DTYPE)
+#TODO : why putting these lines in _collapse make the function slower ?
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
 def _collapse(
     INT_DTYPE_t[:, :] edges,
     FLOAT_DTYPE_t[:] costs,
-    FLOAT_DTYPE_t[:, :] newpoints,
+    FLOAT_DTYPE_t[:, :] target_points,
     FLOAT_DTYPE_t[:, :] quadrics,
     FLOAT_DTYPE_t[:, :] points,
     INT_DTYPE_t n_points_to_remove=5000):
 
-    cdef INT_DTYPE_t[:] edge = np.zeros([2], dtype=INT_DTYPE)
+    
+    points = points.copy()
 
     cdef INT_DTYPE_t[:] indices_to_remove = np.zeros([n_points_to_remove], dtype=INT_DTYPE)
     cdef INT_DTYPE_t[:, :] collapses = np.zeros([n_points_to_remove, 2], dtype=INT_DTYPE)
-    cdef FLOAT_DTYPE_t[:, :] newpoints_history = np.zeros([n_points_to_remove, 3], dtype=FLOAT_DTYPE)
     cdef INT_DTYPE_t n_points_removed = 0
     cdef int n_points = points.shape[0]
-    cdef FLOAT_DTYPE_t[:, :] new_vertices = np.zeros([points.shape[0] - n_points_to_remove, 3], dtype=FLOAT_DTYPE)
+
+    cdef FLOAT_DTYPE_t[:, :] decimated_points = np.zeros([points.shape[0] - n_points_to_remove, 3], dtype=FLOAT_DTYPE)
     cdef FLOAT_DTYPE_t[:] newpoint = np.zeros([3], dtype=FLOAT_DTYPE)
 
     cdef int e0, e1
@@ -440,29 +480,24 @@ def _collapse(
 
     while n_points_removed < n_points_to_remove:
 
-        ## FAST #####
         indice = 0
         for i in range(noninf_limit):
             if costs[i] < costs[indice]:
                 indice = i
 
-        ##############
         e0 = edges[indice, 0]
         e1 = edges[indice, 1]
-        ### FAST #####
 
         for k in range(11):
             quadrics[e0, k] += quadrics[e1, k]
 
-        
-        points[e0, :] = newpoints[indice, :]
+        for k in range(3):
+            points[e0, k] = target_points[indice, k]
         collapses[n_points_removed, 0] = e0
         collapses[n_points_removed, 1] = e1
-        newpoints_history[n_points_removed, :] = points[e0, :]
+        # newpoints_history[n_points_removed, :] = points[e0, :]
 
         indices_to_remove[n_points_removed] = e1
-        ##############
-
         n_points_removed = n_points_removed + 1
 
         # Update the edges
@@ -480,16 +515,21 @@ def _collapse(
             # Update the cost of the impacted edges (they have e0 as vertex)
             if (edges[i, 0] == e0 or edges[i, 1] == e0) and edges[i, 0] != edges[i, 1]:
                 
-                costs[i], newpoint = _compute_cost(edge=edges[i, :], quadrics=quadrics, points=points)
-                newpoints[i, :] = newpoint
+                costs[i], newpoint = _compute_cost(edge=edges[i, :], quadrics=quadrics, points=points, pt0=_pt0, pt1=_pt1, tmp=_tmp, tmp2=_tmp2, v=_v, tmpQuad=_tmpQuad, x=_x, newpoint=_tmpNewpoint)
+                target_points[i, 0] = newpoint[0]
+                target_points[i, 1] = newpoint[1]
+                target_points[i, 2] = newpoint[2]
 
 
             # If the edge is degenerated, remove it
             if edges[i, 0] == edges[i, 1]:
                 noninf_limit -= 1
                 costs[i] = costs[noninf_limit]
-                edges[i, :] = edges[noninf_limit, :]
-                newpoints[i, :] = newpoints[noninf_limit, :]
+                edges[i, 0] = edges[noninf_limit, 0]
+                edges[i, 1] = edges[noninf_limit, 1]
+                target_points[i, 0] = target_points[noninf_limit, 0]
+                target_points[i, 1] = target_points[noninf_limit, 1]
+                target_points[i, 2] = target_points[noninf_limit, 2]
                 i -= 1
 
             i += 1
@@ -502,76 +542,101 @@ def _collapse(
         if i == indices_to_remove[j]:
             j += 1
         else:
-            new_vertices[counter, 0] = points[i, 0]
-            new_vertices[counter, 1] = points[i, 1]
-            new_vertices[counter, 2] = points[i, 2]
+            decimated_points[counter, 0] = points[i, 0]
+            decimated_points[counter, 1] = points[i, 1]
+            decimated_points[counter, 2] = points[i, 2]
             counter += 1
 
-    return np.asarray(new_vertices), np.asarray(collapses), np.asarray(newpoints_history)
+    return np.asarray(decimated_points), np.asarray(collapses)
 
+def _compute_indice_mapping(collapses, n_points):
 
-####### Python functions #######
+    # Compute the mapping from original indices to new indices
+    keep = np.setdiff1d(
+        np.arange(n_points), collapses[:, 1]
+    )  # Indices of the points that must be kept after decimation
+    # start with identity mapping
+    indice_mapping = np.arange(n_points, dtype=INT_DTYPE)
+    # First round of mapping
+    origin_indices = collapses[:, 1]
+    indice_mapping[origin_indices] = collapses[:, 0]
+    previous = np.zeros(len(indice_mapping))
+    while not np.array_equal(previous, indice_mapping):
+        previous = indice_mapping.copy()
+        indice_mapping[origin_indices] = indice_mapping[
+            indice_mapping[origin_indices]
+        ]
+    application = dict([keep[i], i] for i in range(len(keep)))
+    indice_mapping = np.array([application[i] for i in indice_mapping])
 
-def _compute_edges(triangles, repeated=False):
-    repeated_edges = np.concatenate(
-        [
-            triangles[[0, 1], :],
-            triangles[[1, 2], :],
-            triangles[[0, 2], :],
-        ],
-        axis=1,
+    return indice_mapping
+
+def _compute_decimated_triangles(triangles, indice_mapping):
+
+    triangles = indice_mapping[triangles.copy()]
+    # compute the new triangles
+    keep_triangle = (
+        (triangles[:, 0] != triangles[:, 1])
+        * (triangles[:, 1] != triangles[:, 2])
+        * (triangles[:, 0] != triangles[:, 2])
     )
-
-    repeated_edges.sort(axis=0)
-
-    repeated_edges
-    # Remove the duplicates and return
-    if not repeated:
-        return np.unique(repeated_edges, axis=1)
-
-    else:
-        ordering = np.lexsort(repeated_edges)
-        return repeated_edges[:, ordering]
+    return triangles[keep_triangle]
 
 
-def decimate(
-    points,
-    triangles,
-    target_reduction: float = 0.5,
-    running_time: bool = False,
-):
-    """Apply the quadric decimation algorithm to a mesh.
+
+def decimate(points, triangles, n_points_to_remove):
+    """Decimate a mesh to a given number of points.
 
     Args:
         points (_type_): _description_
-        triangles (_type_): _description_
-        target_reduction (float, optional): _description_. Defaults to 0.5.
-        print_compute_time (bool, optional): _description_. Defaults to False.
-
-    Returns:
-        _type_: _description_
+        triangle (_type_): _description_
+        n_points_removed (_type_): _description_
     """
-    assert target_reduction > 0.0 and target_reduction < 1.0
-    quadrics = _initialize_quadrics(points, triangles.T)
-    repeated_edges = _compute_edges(triangles, repeated=True)
-    boundary_quadrics = _compute_boundary_quadrics(points, repeated_edges.T, triangles.T)
-    quadrics += boundary_quadrics
+
+    points = np.array(points.copy(), dtype=FLOAT_DTYPE)
+    n_points = points.shape[0]
+    triangles = np.array(triangles.copy(), dtype=INT_DTYPE)
+
+    # Initialize the quadrics as the sum of boundary quadrics and non-boundary quadrics
+    quadrics = (
+        _nonboundary_quadrics(points=points, triangles=triangles)
+        + _boundary_quadrics(points=points, triangles=triangles)
+        )
+    # Now we have a quadric for each vertex, one can forget about the triangles and focus on
+    # the edges to decimate. Each edge will have a cost associated to it, and a target point.
+    # After executing the decimation, we will compute the new triangles.
+
+    # Compute the edges of the mesh
     edges = _compute_edges(triangles)
-    costs, target_points = _initialize_costs(edges.T, quadrics, points)
-    n_points_to_remove = int(target_reduction * points.shape[0])
-    output_points, collapses, newpoints = _collapse(
-        edges=edges.T,
-        costs=costs,
-        newpoints=target_points,
-        quadrics=quadrics,
+    # Initialize the costs and target points
+    costs, target_points = _initialize_costs(points=points, edges=edges, quadrics=quadrics)
+    # Decimate the mesh to the desired number of points
+    decimated_points, collapses = _collapse(
         points=points,
-        n_points_to_remove=n_points_to_remove,
+        edges=edges,
+        costs=costs,
+        target_points=target_points,
+        quadrics=quadrics,
+        n_points_to_remove=n_points_to_remove
     )
 
+    # At this point, we did the intensive computations. We have the decimated points, the
+    # history of collapses, and the history of new points. We can now compute the new triangles
+    # and the mapping between the old and new indices from these informations.
 
-    return output_points, collapses, newpoints
+    # Compute the mapping between the old and new indices
+    indice_mapping = _compute_indice_mapping(collapses=collapses, n_points=n_points)
+    # Compute the new triangles
+    decimated_triangles = _compute_decimated_triangles(triangles=triangles, indice_mapping=indice_mapping)
 
+    # Return a named tuple with all the informations
 
+    return DecimationOutput(
+        decimated_points=decimated_points,
+        decimated_triangles=decimated_triangles,
+        indice_mapping=indice_mapping,
+        collapses=collapses,
+    )
 
 
 def _replay_loop(FLOAT_DTYPE_t[:, :] points, FLOAT_DTYPE_t[:, :] quadrics, INT_DTYPE_t[:, :] collapses_history):
@@ -589,124 +654,61 @@ def _replay_loop(FLOAT_DTYPE_t[:, :] points, FLOAT_DTYPE_t[:, :] quadrics, INT_D
             quadrics[e0, k] += quadrics[e1, k]
         edge[0] = e0
         edge[1] = e1
-        cost, newpoint = _compute_cost(edge, quadrics, points)
+        cost, newpoint = _compute_cost(edge=edge, quadrics=quadrics, points=points, pt0=_pt0, pt1=_pt1, tmp=_tmp, tmp2=_tmp2, v=_v, tmpQuad=_tmpQuad, x=_x, newpoint=_tmpNewpoint)
         points[e0, :] = newpoint
 
     return np.asarray(points)
 
 
-def replay_decimation(
+def _replay_decimation(
     points,
     triangles,
-    collapses_history,
+    collapses,
 ):
 
-    quadrics = _initialize_quadrics(points, triangles)
-    repeated_edges = _compute_edges(triangles, repeated=True)
-    boundary_quadrics = _compute_boundary_quadrics(points, repeated_edges, triangles)
-    quadrics += boundary_quadrics
+    points = np.array(points.copy(), dtype=FLOAT_DTYPE) 
+    triangles = np.array(triangles.copy(), dtype=INT_DTYPE)
 
-    newpoints = _replay_loop(points.copy(), quadrics, collapses_history)
+    quadrics = (
+        _nonboundary_quadrics(points=points, triangles=triangles)
+        + _boundary_quadrics(points=points, triangles=triangles)
+        )
+
+    decimated_points = _replay_loop(points, quadrics, collapses)
     
-    keep = np.setdiff1d(
-        np.arange(len(points)), np.array(collapses_history[:, 1])
-    )  # Indices of the points that must be kept after decimation
+    keep = np.sort(np.setdiff1d(
+        np.arange(len(points)), np.array(collapses[:, 1])
+    ))  # Indices of the points that must be kept after decimation
 
-    return newpoints[keep]
+    return decimated_points[keep]
 
-
-
-if False:
-
-    DecimationOutput = namedtuple(
-            "DecimationOutput",
-            [
-                "decimated_points",
-                "decimated_triangles",
-                "indice_mapping",
-                "collapses_history",
-            ],
-        )
-
-    # Newpoints history is no longer needed with
-    # the new implementation of replay
-
-    def decimate2(points, triangle, n_points_to_remove):
-        """Decimate a mesh to a given number of points.
-
-        Args:
-            points (_type_): _description_
-            triangle (_type_): _description_
-            n_points_removed (_type_): _description_
-        """
-
-        # Initialize the quadrics as the sum of boundary quadrics and non-boundary quadrics
-        quadrics = _nonboundary_quadrics(points, triangles) + _boundary_quadrics(points, triangles)
-        # Now we have a quadric for each vertex, one can forget about the triangles and focus on
-        # the edges to decimate. Each edge will have a cost associated to it, and a target point.
-        # After executing the decimation, we will compute the new triangles.
-
-        # Compute the edges of the mesh
-        edges = _get_edges(triangles)
-        # Initialize the costs and target points
-        costs, target_points = _initialize_costs(edges, quadrics, points)
-        # Decimate the mesh to the desired number of points
-        decimated_points, collapses_history = _collapse(
-            edges, costs, target_points, quadrics, points, n_points_to_remove
-        )
-
-        # At this point, we did the intensive computations. We have the decimated points, the
-        # history of collapses, and the history of new points. We can now compute the new triangles
-        # and the mapping between the old and new indices from these informations.
-
-        # Compute the mapping between the old and new indices
-        indice_mapping = _compute_indice_mapping(collapses_history)
-        # Compute the new triangles
-        decimated_triangles = _compute_decimated_triangles(triangles, indice_mapping)
-
-        # Return a named tuple with all the informations
-        DecimationOutput = namedtuple(
-            "DecimationOutput",
-            [
-                "decimated_points",
-                "decimated_triangles",
-                "indice_mapping",
-                "collapses_history",
-            ],
-        )
-
-        return DecimationOutput(
-            decimated_points=decimated_points,
-            decimated_triangles=decimated_triangles,
-            indice_mapping=indice_mapping,
-            collapses_history=collapses_history,
-            newpoints_history=newpoints_history,
-        )
-
-
-    def replay_decimation2(points, triangles, collapses_history, n_points_to_remove):
+def replay_decimation(points, triangles, collapses, stop_after=None):
         """Replay a decimation from a history of collapses.
 
         You can replay a decimation
         """
-        assert 0 <= n_points_to_remove <= collapses_history.shape[0], "n_points_to_remove must be between 0 and the number of collapses"
-        collapses = collapses_history[:n_points_to_remove, :]
+        points = np.array(points.copy(), dtype=FLOAT_DTYPE)
+        n_points = points.shape[0]
+        triangles = np.array(triangles.copy(), dtype=INT_DTYPE)
 
+        if stop_after is not None:
+            assert 0 <= stop_after <= collapses.shape[0], "stop_after must be between 0 and the number of collapses"
+        else:
+            stop_after = collapses.shape[0]
+
+        collapses = collapses[0:stop_after, :]
         # Initialize the quadrics as the sum of boundary quadrics and non-boundary quadrics
-        quadrics = _nonboundary_quadrics(points, triangles) + _boundary_quadrics(points, triangles)
 
         #Replay the decimation
-        decimated_points = _replay_decimation(points, quadrics, collapses)
-
+        decimated_points = _replay_decimation(points=points, triangles=triangles, collapses=collapses)
         # Compute the mapping between the old and new indices
-        indice_mapping = _compute_indice_mapping(collapses)
-
+        indice_mapping = _compute_indice_mapping(collapses=collapses, n_points=n_points)
         # Compute the new triangles
-        decimated_triangles = _compute_decimated_triangles(triangles, indice_mapping)   
+        decimated_triangles = _compute_decimated_triangles(triangles=triangles, indice_mapping=indice_mapping)   
 
         return DecimationOutput(
             decimated_points=decimated_points,
             decimated_triangles=decimated_triangles,
             indice_mapping=indice_mapping,
-            collapses_history=collapses_history,
+            collapses=collapses,
         )
