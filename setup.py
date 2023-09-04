@@ -8,11 +8,12 @@ from Cython.Build import cythonize
 
 extension = Extension(
     name="pymeshdecimation.cython._decimation",
-    sources=[join("pymeshdecimation", "cython", "_decimation.pyx")],
-    include_dirs=[np.get_include()],
+    sources=[
+        join("pymeshdecimation", "cython", "_decimation.pyx"),
+    ],
+    include_dirs=[np.get_include(), join("pymeshdecimation", "cython")],
     define_macros=[("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")],
 )
-
 
 setup(
     name="pymeshdecimation",
