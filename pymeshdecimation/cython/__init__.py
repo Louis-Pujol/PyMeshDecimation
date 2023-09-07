@@ -7,5 +7,5 @@ from ._decimation import (
     decimate,
     replay_decimation,
     _replay_decimation,
-    PyRectangle,
+    _compute_indice_mapping,
 )

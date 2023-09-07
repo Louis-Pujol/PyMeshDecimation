@@ -1,28 +1,5 @@
 # distutils: language = c++
 
-from .Rectangle cimport Rectangle
-# from libcpp.vector cimport vector
-
-cdef class PyRectangle:
-    cdef Rectangle*c_rect  # hold a pointer to the C++ instance which we're wrapping
-
-    def __cinit__(self):
-        self.c_rect = new Rectangle()
-
-    def __init__(self, int x0, int y0, int x1, int y1):
-
-        self.c_rect.setCoordinates(x0, y0, x1, y1)
-
-        self.c_rect.x0 = x0
-        self.c_rect.y0 = y0
-        self.c_rect.x1 = x1
-        self.c_rect.y1 = y1
-
-    def getArea(self):
-        return self.c_rect.getArea()
-
-    def __dealloc__(self):
-        del self.c_rect
 
 
 cimport cython
@@ -318,15 +295,7 @@ def _boundary_quadrics(FLOAT_DTYPE_t[:, :] points, INT_DTYPE_t[:, :] triangles):
 def _compute_cost(
     INT_DTYPE_t[:] edge,
     FLOAT_DTYPE_t[:, :] quadrics,
-    FLOAT_DTYPE_t[:, :] points,
-    FLOAT_DTYPE_t[:] pt0 = np.zeros([3], dtype=FLOAT_DTYPE),
-    FLOAT_DTYPE_t[:] pt1 = np.zeros([3], dtype=FLOAT_DTYPE),
-    FLOAT_DTYPE_t[:] tmp = np.zeros([3], dtype=FLOAT_DTYPE),
-    FLOAT_DTYPE_t[:] tmp2 = np.zeros([3], dtype=FLOAT_DTYPE),
-    FLOAT_DTYPE_t[:] v = np.zeros([3], dtype=FLOAT_DTYPE),
-    FLOAT_DTYPE_t[:] tmpQuad = np.zeros([11], dtype=FLOAT_DTYPE),
-    FLOAT_DTYPE_t[:] x = np.zeros([3], dtype=FLOAT_DTYPE),
-    FLOAT_DTYPE_t[:] newpoint = np.zeros([4], dtype=FLOAT_DTYPE)):
+    FLOAT_DTYPE_t[:, :] points):
 
     cdef double error = 0.0000000001
     cdef double norm
@@ -436,18 +405,6 @@ def _compute_cost(
 @cython.boundscheck(False)
 @cython.wraparound(False)
 def _initialize_costs(INT_DTYPE_t[:, :] edges, FLOAT_DTYPE_t[:, :]  quadrics, FLOAT_DTYPE_t[:, :] points):
-
-    # Temporary variables for _compute_cost routine
-    # there are defined here to avoid re-initialize them a lot of time
-    # cdef FLOAT_DTYPE_t[:] _pt0 = np.zeros([3], dtype=FLOAT_DTYPE)
-    # cdef FLOAT_DTYPE_t[:] _pt1 = np.zeros([3], dtype=FLOAT_DTYPE)
-    # cdef FLOAT_DTYPE_t[:] _tmp = np.zeros([3], dtype=FLOAT_DTYPE)
-    # cdef FLOAT_DTYPE_t[:] _tmp2 = np.zeros([3], dtype=FLOAT_DTYPE)
-    # cdef FLOAT_DTYPE_t[:] _v = np.zeros([3], dtype=FLOAT_DTYPE)
-    # cdef FLOAT_DTYPE_t[:] _tmpQuad = np.zeros([11], dtype=FLOAT_DTYPE)
-    # cdef FLOAT_DTYPE_t[:] _x = np.zeros([3], dtype=FLOAT_DTYPE)
-    # cdef FLOAT_DTYPE_t[:] _tmpNewpoint = np.zeros([4], dtype=FLOAT_DTYPE)
-
     cdef int n_edges = edges.shape[0]
     cdef FLOAT_DTYPE_t[:] costs = np.zeros([n_edges], dtype=FLOAT_DTYPE)
     cdef FLOAT_DTYPE_t[:, :] newpoints = np.zeros([n_edges, 3], dtype=FLOAT_DTYPE)
@@ -457,7 +414,7 @@ def _initialize_costs(INT_DTYPE_t[:, :] edges, FLOAT_DTYPE_t[:, :]  quadrics, FL
     cdef int i
 
     for i in range(n_edges):
-        costs[i], newpoint = _compute_cost(edge=edges[i, :], quadrics=quadrics, points=points, pt0=_pt0, pt1=_pt1, tmp=_tmp, tmp2=_tmp2, v=_v, tmpQuad=_tmpQuad, x=_x, newpoint=_tmpNewpoint)
+        costs[i], newpoint = _compute_cost(edge=edges[i, :], quadrics=quadrics, points=points)
         newpoints[i, :] = newpoint
 
     return np.asarray(costs), np.asarray(newpoints)
@@ -468,15 +425,18 @@ def _initialize_costs(INT_DTYPE_t[:, :] edges, FLOAT_DTYPE_t[:, :]  quadrics, FL
 
 # Temporary variables for _compute_cost routine
 # there are defined here to avoid re-initialize them a lot of time
-cdef FLOAT_DTYPE_t[:] _pt0 = np.zeros([3], dtype=FLOAT_DTYPE)
-cdef FLOAT_DTYPE_t[:] _pt1 = np.zeros([3], dtype=FLOAT_DTYPE)
-cdef FLOAT_DTYPE_t[:] _tmp = np.zeros([3], dtype=FLOAT_DTYPE)
-cdef FLOAT_DTYPE_t[:] _tmp2 = np.zeros([3], dtype=FLOAT_DTYPE)
-cdef FLOAT_DTYPE_t[:] _v = np.zeros([3], dtype=FLOAT_DTYPE)
-cdef FLOAT_DTYPE_t[:] _tmpQuad = np.zeros([11], dtype=FLOAT_DTYPE)
-cdef FLOAT_DTYPE_t[:] _x = np.zeros([3], dtype=FLOAT_DTYPE)
-cdef FLOAT_DTYPE_t[:] _tmpNewpoint = np.zeros([4], dtype=FLOAT_DTYPE)
+cdef FLOAT_DTYPE_t[:] pt0 = np.zeros([3], dtype=FLOAT_DTYPE)
+cdef FLOAT_DTYPE_t[:] pt1 = np.zeros([3], dtype=FLOAT_DTYPE)
+cdef FLOAT_DTYPE_t[:] tmp = np.zeros([3], dtype=FLOAT_DTYPE)
+cdef FLOAT_DTYPE_t[:] tmp2 = np.zeros([3], dtype=FLOAT_DTYPE)
+cdef FLOAT_DTYPE_t[:] v = np.zeros([3], dtype=FLOAT_DTYPE)
+cdef FLOAT_DTYPE_t[:] tmpQuad = np.zeros([11], dtype=FLOAT_DTYPE)
+cdef FLOAT_DTYPE_t[:] x = np.zeros([3], dtype=FLOAT_DTYPE)
+cdef FLOAT_DTYPE_t[:] newpoint = np.zeros([4], dtype=FLOAT_DTYPE)
 #TODO : why putting these lines in _collapse make the function slower ?
+
+
+from time import time
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
@@ -488,6 +448,13 @@ def _collapse(
     FLOAT_DTYPE_t[:, :] points,
     INT_DTYPE_t n_points_to_remove=5000):
 
+    cdef FLOAT_DTYPE_t find_min_time = 0.0
+    cdef FLOAT_DTYPE_t total_time = 0.0
+    cdef FLOAT_DTYPE_t compute_costs_time = 0.0
+    cdef FLOAT_DTYPE_t edge_collapse_time = 0.0
+    cdef FLOAT_DTYPE_t start_total, start_find_min, start_compute_costs, start_edge_collapse
+
+    start_total = time()
     
     points = points.copy()
 
@@ -495,12 +462,17 @@ def _collapse(
     cdef INT_DTYPE_t[:, :] collapses = np.zeros([n_points_to_remove, 2], dtype=INT_DTYPE)
     cdef INT_DTYPE_t n_points_removed = 0
     cdef int n_points = points.shape[0]
+    cdef int n_edges = edges.shape[0]
 
     cdef FLOAT_DTYPE_t[:, :] decimated_points = np.zeros([points.shape[0] - n_points_to_remove, 3], dtype=FLOAT_DTYPE)
     cdef FLOAT_DTYPE_t[:] newpoint = np.zeros([3], dtype=FLOAT_DTYPE)
+ 
 
     cdef int e0, e1
     cdef int i, j, k, indice, counter
+    cdef int p0, p1, q0, q1
+    cdef FLOAT_DTYPE_t tmp = 0.0
+
 
     # the edges with infinite cost will be at the end of the array
     cdef INT_DTYPE_t noninf_limit = edges.shape[0]
@@ -508,9 +480,14 @@ def _collapse(
     while n_points_removed < n_points_to_remove:
 
         indice = 0
+        tmp = costs[0]
+        start_find_min = time()
         for i in range(noninf_limit):
-            if costs[i] < costs[indice]:
+            if costs[i] < tmp:
                 indice = i
+                tmp = costs[i]
+        find_min_time += time() - start_find_min
+        
 
         e0 = edges[indice, 0]
         e1 = edges[indice, 1]
@@ -522,7 +499,6 @@ def _collapse(
             points[e0, k] = target_points[indice, k]
         collapses[n_points_removed, 0] = e0
         collapses[n_points_removed, 1] = e1
-        # newpoints_history[n_points_removed, :] = points[e0, :]
 
         indices_to_remove[n_points_removed] = e1
         n_points_removed = n_points_removed + 1
@@ -531,6 +507,9 @@ def _collapse(
         i = 0
         # the edges with indices > noninf_limit are the ones with infinite cost
         # they are not considered
+
+        start_edge_collapse = time()
+
         while i < noninf_limit:
 
             # Update the connectivity e0 <- e1
@@ -540,26 +519,34 @@ def _collapse(
                 edges[i, 1] = e0
 
             # Update the cost of the impacted edges (they have e0 as vertex)
-            if (edges[i, 0] == e0 or edges[i, 1] == e0) and edges[i, 0] != edges[i, 1]:
+            if (edges[i, 0] == e0 or edges[i, 1] == e0):
+
                 
-                costs[i], newpoint = _compute_cost(edge=edges[i, :], quadrics=quadrics, points=points, pt0=_pt0, pt1=_pt1, tmp=_tmp, tmp2=_tmp2, v=_v, tmpQuad=_tmpQuad, x=_x, newpoint=_tmpNewpoint)
-                target_points[i, 0] = newpoint[0]
-                target_points[i, 1] = newpoint[1]
-                target_points[i, 2] = newpoint[2]
+                 # If the edge is not degenerated, update the cost
+                if edges[i, 0] != edges[i, 1]:
+                    start_compute_costs = time()
+                    costs[i], newpoint = _compute_cost(edge=edges[i, :], quadrics=quadrics, points=points)
+                    compute_costs_time += time() - start_compute_costs
+                    target_points[i, 0] = newpoint[0]
+                    target_points[i, 1] = newpoint[1]
+                    target_points[i, 2] = newpoint[2]
+
+                # Else, remove the edge
+                else:
+
+                    noninf_limit -= 1
+                    costs[i] = costs[noninf_limit]
+                    edges[i, 0] = edges[noninf_limit, 0]
+                    edges[i, 1] = edges[noninf_limit, 1]
+                    target_points[i, 0] = target_points[noninf_limit, 0]
+                    target_points[i, 1] = target_points[noninf_limit, 1]
+                    target_points[i, 2] = target_points[noninf_limit, 2]
+                    i -= 1
 
 
-            # If the edge is degenerated, remove it
-            if edges[i, 0] == edges[i, 1]:
-                noninf_limit -= 1
-                costs[i] = costs[noninf_limit]
-                edges[i, 0] = edges[noninf_limit, 0]
-                edges[i, 1] = edges[noninf_limit, 1]
-                target_points[i, 0] = target_points[noninf_limit, 0]
-                target_points[i, 1] = target_points[noninf_limit, 1]
-                target_points[i, 2] = target_points[noninf_limit, 2]
-                i -= 1
 
             i += 1
+        edge_collapse_time += time() - start_edge_collapse
     
 
     np.asarray(indices_to_remove).sort()
@@ -573,6 +560,13 @@ def _collapse(
             decimated_points[counter, 1] = points[i, 1]
             decimated_points[counter, 2] = points[i, 2]
             counter += 1
+
+    total_time = time() - start_total
+    print("Total time : ", total_time)
+    print("Find minimal costs time : ", find_min_time)
+    print("Edge collapse time : ", edge_collapse_time)
+    print("Compute costs time : ", compute_costs_time)
+
 
     return np.asarray(decimated_points), np.asarray(collapses)
 
@@ -681,7 +675,7 @@ def _replay_loop(FLOAT_DTYPE_t[:, :] points, FLOAT_DTYPE_t[:, :] quadrics, INT_D
             quadrics[e0, k] += quadrics[e1, k]
         edge[0] = e0
         edge[1] = e1
-        cost, newpoint = _compute_cost(edge=edge, quadrics=quadrics, points=points, pt0=_pt0, pt1=_pt1, tmp=_tmp, tmp2=_tmp2, v=_v, tmpQuad=_tmpQuad, x=_x, newpoint=_tmpNewpoint)
+        cost, newpoint = _compute_cost(edge=edge, quadrics=quadrics, points=points)
         points[e0, :] = newpoint
 
     return np.asarray(points)
